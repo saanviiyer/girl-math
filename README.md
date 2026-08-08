@@ -1,5 +1,8 @@
 # Girl Math 💅
 
+> Set a daily budget; unspent money rolls over into a growing surplus you can splurge with.
+
+
 A daily-budget **carryover tracker**. Set a daily budget, log what you spend, and
 every dollar you *don't* spend becomes surplus you can splurge with later —
 guilt-free. It's just math.

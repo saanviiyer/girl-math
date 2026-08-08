@@ -2,6 +2,7 @@
   "name": "girl-math",
   "private": true,
   "version": "1.0.0",
+  "description": "Set a daily budget; unspent money rolls over into a growing surplus you can splurge with.",
   "type": "module",
   "scripts": {
     "dev": "vite",
