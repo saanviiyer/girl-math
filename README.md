@@ -9,8 +9,13 @@ guilt-free. It's just math.
 
 > you didn't spend $11 today, so really you MADE $11.
 
-Everything runs in the browser. No backend, no accounts — all data lives in
-`localStorage`.
+Runs two ways with the **same UI**:
+
+- **Local demo mode (zero config)** — no backend, no accounts, all data lives in
+  `localStorage`. This is the default when no Supabase env vars are set.
+- **Real multi-user mode** — add a free Supabase project and the app gains email
+  magic-link accounts and cloud sync across devices. See
+  [Make it real / Production setup](#make-it-real--production-setup).
 
 ## How it works (the math)
 
@@ -112,8 +117,84 @@ npm run build
 Because it's a single-page app, configure your host to fall back to
 `index.html` for unknown routes (the included configs already do this).
 
+## Make it real / Production setup
+
+Out of the box the app runs in **local-only demo mode** — no accounts, data in
+`localStorage`. To turn it into a real multi-user product with accounts and cloud
+sync, point it at a free [Supabase](https://supabase.com) project. It stays fully
+optional: **without the two env vars below, the app still builds and runs in demo
+mode.**
+
+**1. Create a Supabase project**
+
+Sign up at [supabase.com](https://supabase.com), create a new project (the free
+tier is plenty), and wait for it to finish provisioning.
+
+**2. Run the migration**
+
+The schema lives in [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql).
+Apply it either way:
+
+- **SQL editor** — open the project's *SQL Editor*, paste the contents of the
+  migration file, and run it.
+- **Supabase CLI** — link the project and push:
+
+  ```bash
+  supabase link --project-ref <your-project-ref>
+  supabase db push
+  ```
+
+This creates `profiles`, `budget_settings`, and `spending_entries`, all with
+**Row Level Security enabled** and per-row policies so each user can only ever
+touch their own rows (`auth.uid() = user_id`).
+
+**3. Enable email auth**
+
+In *Authentication → Providers*, make sure **Email** is enabled (magic links are
+on by default). Under *Authentication → URL Configuration*, add your app's
+URL(s) — `http://localhost:5173` for local dev and your production domain — to
+the redirect allow-list.
+
+**4. Set the env vars**
+
+Grab the values from *Project Settings → API* (**only** the public `anon` key,
+never the service-role key):
+
+```bash
+cp .env.example .env.local
+# then edit .env.local:
+# VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
+# VITE_SUPABASE_ANON_KEY=<your-anon-public-key>
+```
+
+Restart `npm run dev`. You'll now get a sign-in screen; enter your email, click
+the magic link, and your budget + spending sync to Postgres.
+
+**5. Set the same vars in Vercel**
+
+In the Vercel project → *Settings → Environment Variables*, add `VITE_SUPABASE_URL`
+and `VITE_SUPABASE_ANON_KEY` (Production + Preview), then redeploy. Add the Vercel
+domain to the Supabase redirect allow-list from step 3.
+
+> Leave the env vars unset anywhere (local or Vercel) and that deployment simply
+> runs in local-only demo mode — no code changes needed.
+
+### How it's wired
+
+- `src/lib/supabase.ts` — creates the client only when both env vars exist.
+- `src/lib/auth.tsx` — `AuthProvider` + `useAuth()` (magic-link sign-in/out).
+- `src/lib/repository.ts` — a `Repository` interface with two implementations,
+  `LocalRepository` (localStorage) and `SupabaseRepository` (Postgres), selected
+  at runtime by `getRepository`.
+- The pure `src/lib/mathEngine.ts` and its tests are untouched — persistence is
+  swapped underneath the same math.
+
 ## Data & privacy
 
-All data is stored locally in your browser under the `girl-math:v1` key. Clearing
-site data (or the in-app **Reset all data** button) wipes it. Nothing is sent
-anywhere.
+In **local demo mode**, all data is stored locally in your browser under the
+`girl-math:v1` key. Clearing site data (or the in-app **Reset all data** button)
+wipes it. Nothing is sent anywhere.
+
+In **Supabase mode**, your budget settings and spending entries are stored in
+your own Supabase Postgres database, scoped to your account and protected by Row
+Level Security so no other user can read or write your rows.
