@@ -17,7 +17,10 @@ const NOW = new Date(2026, 0, 10, 12, 0, 0) // 2026-01-10, local noon
 const TODAY = '2026-01-10'
 
 function makeState(dailyBudget: number, startDate: string, entries: Entry[]): AppState {
-  const settings: Settings = { dailyBudget, currency: 'USD', startDate, onboarded: true }
+  const settings: Settings = {
+    dailyBudget, currency: 'USD', startDate, onboarded: true,
+    budgetHistory: [{ effectiveDate: startDate, dailyBudget }],
+  }
   return { settings, entries }
 }
 
@@ -46,6 +49,20 @@ describe('date helpers', () => {
 })
 
 describe('carryover surplus math', () => {
+  it('preserves historical days when the budget changes', () => {
+    const state = makeState(50, '2026-01-08', [])
+    state.settings.budgetHistory = [
+      { effectiveDate: '2026-01-08', dailyBudget: 30 },
+      { effectiveDate: '2026-01-09', dailyBudget: 50 },
+    ]
+    expect(bankedSurplus(state, NOW)).toBe(80)
+  })
+
+  it('sums in integer cents across many entries', () => {
+    const state = makeState(1, '2026-01-09', Array.from({ length: 10 }, (_, i) => entry('2026-01-09', i === 9 ? 0.1 : 0.1)))
+    expect(spentOn(state.entries, '2026-01-09')).toBe(1)
+    expect(bankedSurplus(state, NOW)).toBe(0)
+  })
   it('banks the leftover when you underspend', () => {
     // budget 30/day, started 3 days ago. Days 8,9 under budget, spent 20 each.
     const state = makeState(30, '2026-01-08', [

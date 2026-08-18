@@ -17,6 +17,13 @@ export interface Settings {
   startDate: string
   /** whether onboarding has been completed */
   onboarded: boolean
+  /** Effective-dated budget changes so editing today's budget never rewrites history. */
+  budgetHistory: BudgetPeriod[]
+}
+
+export interface BudgetPeriod {
+  effectiveDate: string
+  dailyBudget: number
 }
 
 export interface AppState {

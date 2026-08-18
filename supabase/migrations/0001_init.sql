@@ -31,6 +31,7 @@ create table if not exists public.budget_settings (
   currency     text not null default 'USD',
   start_date   date not null default current_date,
   onboarded    boolean not null default false,
+  budget_history jsonb not null default '[]'::jsonb,
   updated_at   timestamptz not null default now()
 );
 
