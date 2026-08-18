@@ -41,8 +41,11 @@ All of this lives in a single pure, unit-tested module: [`src/lib/mathEngine.ts`
 - Log spending for today or back-date it, with an optional note and category.
 - Dashboard: big "you've banked $X" number, today's remaining, a 30-day net
   bar chart, and a streak counter.
-- History grouped by day with per-day net; edit or delete any entry.
-- Settings to change the budget/currency (recomputes every day) or reset all data.
+- History grouped by day with per-day net; edit dates, amounts, categories, and notes, or delete entries with one-step undo.
+- Effective-dated budgets: changes begin today without rewriting historical totals.
+- Validated JSON backup/restore and spreadsheet-friendly CSV export.
+- Installable offline-capable mobile web app; local mode continues working without a network.
+- Settings to change the budget/currency or reset all data.
 - Playful "girl math" microcopy throughout.
 
 ## Run it
@@ -132,7 +135,7 @@ tier is plenty), and wait for it to finish provisioning.
 
 **2. Run the migration**
 
-The schema lives in [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql).
+The schema lives in [`supabase/migrations`](supabase/migrations). Apply every migration in filename order (including `0002_budget_history.sql` for existing installations).
 Apply it either way:
 
 - **SQL editor** — open the project's *SQL Editor*, paste the contents of the
@@ -193,8 +196,10 @@ domain to the Supabase redirect allow-list from step 3.
 
 In **local demo mode**, all data is stored locally in your browser under the
 `girl-math:v1` key. Clearing site data (or the in-app **Reset all data** button)
-wipes it. Nothing is sent anywhere.
+wipes it. Nothing is sent anywhere. Use **Download backup** before clearing data or moving devices.
 
 In **Supabase mode**, your budget settings and spending entries are stored in
 your own Supabase Postgres database, scoped to your account and protected by Row
-Level Security so no other user can read or write your rows.
+Level Security so no other user can read or write your rows. The last successful
+sync is cached on the signed-in device for read-only recovery during an outage;
+the app clearly warns when that fallback is in use.

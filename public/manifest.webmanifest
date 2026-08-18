@@ -1,0 +1,10 @@
+{
+  "name": "Girl Math — Daily Budget Carryover",
+  "short_name": "Girl Math",
+  "description": "Track a daily budget and carry unspent money forward.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff1f7",
+  "theme_color": "#ff3385",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

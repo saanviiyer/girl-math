@@ -7,7 +7,7 @@ interface Props {
   minDate?: string
 }
 
-const CATEGORIES = ['🍿 fun', '🍕 food', '🛍️ shopping', '🚕 transport', '💡 bills', '💖 self-care', '📦 other']
+export const CATEGORIES = ['🍿 fun', '🍕 food', '🛍️ shopping', '🚕 transport', '💡 bills', '💖 self-care', '📦 other']
 
 export default function LogSpending({ onAdd, maxDate = todayISO(), minDate }: Props) {
   const [amount, setAmount] = useState('')
@@ -17,7 +17,8 @@ export default function LogSpending({ onAdd, maxDate = todayISO(), minDate }: Pr
   const [flash, setFlash] = useState(false)
 
   const value = Number(amount)
-  const valid = Number.isFinite(value) && value >= 0 && amount.trim() !== ''
+  const dateValid = date >= (minDate ?? date) && date <= maxDate
+  const valid = Number.isFinite(value) && value > 0 && value <= 1_000_000_000 && amount.trim() !== '' && dateValid
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -43,17 +44,22 @@ export default function LogSpending({ onAdd, maxDate = todayISO(), minDate }: Pr
       <h2 className="text-lg font-bold text-bubble-700">Log a spend</h2>
 
       <div className="mt-3 flex gap-2">
+        <label className="sr-only" htmlFor="spend-amount">Amount spent</label>
         <input
+          id="spend-amount"
           type="number"
           inputMode="decimal"
-          min="0"
+          min="0.01"
+          max="1000000000"
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="Amount"
           className="flex-1 rounded-2xl border border-bubble-200 bg-white px-4 py-3 text-lg font-bold text-bubble-800 outline-none focus:border-bubble-500 focus:ring-2 focus:ring-bubble-200"
         />
+        <label className="sr-only" htmlFor="spend-date">Spending date</label>
         <input
+          id="spend-date"
           type="date"
           value={date}
           max={maxDate}
@@ -64,6 +70,8 @@ export default function LogSpending({ onAdd, maxDate = todayISO(), minDate }: Pr
       </div>
 
       <input
+        aria-label="Note (optional)"
+        maxLength={500}
         type="text"
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -76,6 +84,7 @@ export default function LogSpending({ onAdd, maxDate = todayISO(), minDate }: Pr
           <button
             key={c}
             type="button"
+            aria-pressed={category === c}
             onClick={() => setCategory((prev) => (prev === c ? '' : c))}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
               category === c

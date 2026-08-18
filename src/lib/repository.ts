@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AppState, Entry, Settings } from './types'
 import { DEFAULT_SETTINGS } from './mathEngine'
 import { clearState, loadState, saveState } from './storage'
+import { validateAppState } from './backup'
 
 /**
  * Data-access abstraction used by the app.
@@ -17,6 +18,8 @@ import { clearState, loadState, saveState } from './storage'
 export interface Repository {
   /** Which backend is in use — handy for UI copy. */
   readonly kind: 'local' | 'supabase'
+  /** Set after load when a signed-in user is seeing the last device cache. */
+  readonly lastLoadUsedFallback?: boolean
   /** Load the full app state (settings + entries). */
   load(): Promise<AppState>
   /** Persist the settings object. */
@@ -29,10 +32,12 @@ export interface Repository {
   deleteEntry(id: string): Promise<void>
   /** Wipe all of this user's data. */
   clear(): Promise<void>
+  /** Replace the complete dataset, used by restore and undo. */
+  replaceAll(state: AppState): Promise<void>
 }
 
 const EMPTY_STATE: AppState = {
-  settings: DEFAULT_SETTINGS,
+  settings: { ...DEFAULT_SETTINGS, budgetHistory: [] },
   entries: [],
 }
 
@@ -70,6 +75,10 @@ export class LocalRepository implements Repository {
   async clear(): Promise<void> {
     clearState()
   }
+
+  async replaceAll(state: AppState): Promise<void> {
+    saveState(state)
+  }
 }
 
 /** Shape of a `spending_entries` row in Postgres. */
@@ -89,6 +98,7 @@ interface SettingsRow {
   currency: string
   start_date: string
   onboarded: boolean
+  budget_history: Settings['budgetHistory']
 }
 
 function rowToEntry(row: EntryRow): Entry {
@@ -104,6 +114,7 @@ function rowToSettings(row: SettingsRow): Settings {
     currency: row.currency,
     startDate: row.start_date,
     onboarded: row.onboarded,
+    budgetHistory: Array.isArray(row.budget_history) ? row.budget_history : [],
   }
 }
 
@@ -116,17 +127,36 @@ function rowToSettings(row: SettingsRow): Settings {
  */
 export class SupabaseRepository implements Repository {
   readonly kind = 'supabase' as const
+  lastLoadUsedFallback = false
+  private cachedState: AppState | null = null
 
   constructor(
     private readonly client: SupabaseClient,
     private readonly userId: string,
   ) {}
 
+  private get cacheKey(): string { return `girl-math:cloud-cache:${this.userId}` }
+
+  private readCache(): AppState | null {
+    try {
+      const raw = localStorage.getItem(this.cacheKey)
+      return raw ? validateAppState(JSON.parse(raw)) : null
+    } catch { return null }
+  }
+
+  private writeCache(state: AppState | null): void {
+    this.cachedState = state
+    try {
+      if (state) localStorage.setItem(this.cacheKey, JSON.stringify(state))
+      else localStorage.removeItem(this.cacheKey)
+    } catch { /* Cloud remains authoritative when device storage is unavailable. */ }
+  }
+
   async load(): Promise<AppState> {
     const [settingsRes, entriesRes] = await Promise.all([
       this.client
         .from('budget_settings')
-        .select('user_id, daily_budget, currency, start_date, onboarded')
+        .select('user_id, daily_budget, currency, start_date, onboarded, budget_history')
         .eq('user_id', this.userId)
         .maybeSingle<SettingsRow>(),
       this.client
@@ -136,12 +166,22 @@ export class SupabaseRepository implements Repository {
         .order('date', { ascending: true }),
     ])
 
-    if (settingsRes.error) throw settingsRes.error
-    if (entriesRes.error) throw entriesRes.error
+    if (settingsRes.error || entriesRes.error) {
+      const cached = this.readCache()
+      if (cached) {
+        this.lastLoadUsedFallback = true
+        this.cachedState = cached
+        return cached
+      }
+      throw settingsRes.error ?? entriesRes.error
+    }
 
     const settings = settingsRes.data ? rowToSettings(settingsRes.data) : DEFAULT_SETTINGS
     const entries = (entriesRes.data ?? []).map(rowToEntry)
-    return { settings, entries }
+    const state = { settings, entries }
+    this.lastLoadUsedFallback = false
+    this.writeCache(state)
+    return state
   }
 
   async saveSettings(settings: Settings): Promise<void> {
@@ -151,11 +191,13 @@ export class SupabaseRepository implements Repository {
       currency: settings.currency,
       start_date: settings.startDate,
       onboarded: settings.onboarded,
+      budget_history: settings.budgetHistory,
     }
     const { error } = await this.client
       .from('budget_settings')
       .upsert(row, { onConflict: 'user_id' })
     if (error) throw error
+    if (this.cachedState) this.writeCache({ ...this.cachedState, settings })
   }
 
   async addEntry(entry: Entry): Promise<void> {
@@ -169,6 +211,7 @@ export class SupabaseRepository implements Repository {
     }
     const { error } = await this.client.from('spending_entries').insert(row)
     if (error) throw error
+    if (this.cachedState) this.writeCache({ ...this.cachedState, entries: [...this.cachedState.entries, entry] })
   }
 
   async updateEntry(id: string, patch: Partial<Omit<Entry, 'id'>>): Promise<void> {
@@ -183,6 +226,7 @@ export class SupabaseRepository implements Repository {
       .eq('id', id)
       .eq('user_id', this.userId)
     if (error) throw error
+    if (this.cachedState) this.writeCache({ ...this.cachedState, entries: this.cachedState.entries.map((entry) => entry.id === id ? { ...entry, ...patch } : entry) })
   }
 
   async deleteEntry(id: string): Promise<void> {
@@ -192,6 +236,7 @@ export class SupabaseRepository implements Repository {
       .eq('id', id)
       .eq('user_id', this.userId)
     if (error) throw error
+    if (this.cachedState) this.writeCache({ ...this.cachedState, entries: this.cachedState.entries.filter((entry) => entry.id !== id) })
   }
 
   async clear(): Promise<void> {
@@ -201,6 +246,28 @@ export class SupabaseRepository implements Repository {
     ])
     if (entriesRes.error) throw entriesRes.error
     if (settingsRes.error) throw settingsRes.error
+    this.writeCache(null)
+  }
+
+  async replaceAll(state: AppState): Promise<void> {
+    const previous = await this.load()
+    try {
+      await this.clear()
+      await this.saveSettings(state.settings)
+      for (const entry of state.entries) await this.addEntry(entry)
+      this.writeCache(state)
+    } catch (error) {
+      // Best-effort rollback prevents a partially restored cloud backup.
+      try {
+        await this.clear()
+        await this.saveSettings(previous.settings)
+        for (const entry of previous.entries) await this.addEntry(entry)
+        this.writeCache(previous)
+      } catch {
+        // The original error remains the actionable failure.
+      }
+      throw error
+    }
   }
 }
 

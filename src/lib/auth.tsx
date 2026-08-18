@@ -20,6 +20,8 @@ export interface AuthState {
   /** Send a magic-link / OTP email. Resolves when the mail is dispatched. */
   signInWithEmail: (email: string) => Promise<void>
   signOut: () => Promise<void>
+  displayName: string
+  updateProfile: (displayName: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -35,11 +37,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     let active = true
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return
-      setSession(data.session)
-      setLoading(false)
-    })
+    void (async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+        if (error) throw error
+        if (active) setSession(data.session)
+      } catch (error) {
+        console.error('[girl-math] session restore failed', error)
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
@@ -66,6 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }, [])
 
+  const updateProfile = useCallback(async (displayName: string) => {
+    if (!supabase) throw new Error('Supabase is not configured')
+    const name = displayName.trim().slice(0, 80)
+    const { error } = await supabase.auth.updateUser({ data: { display_name: name } })
+    if (error) throw error
+  }, [])
+
   const value = useMemo<AuthState>(
     () => ({
       configured: isSupabaseConfigured,
@@ -74,8 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       signInWithEmail,
       signOut,
+      displayName: typeof session?.user.user_metadata.display_name === 'string' ? session.user.user_metadata.display_name : '',
+      updateProfile,
     }),
-    [loading, session, signInWithEmail, signOut],
+    [loading, session, signInWithEmail, signOut, updateProfile],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

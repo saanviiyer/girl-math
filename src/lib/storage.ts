@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS } from './mathEngine'
 const KEY = 'girl-math:v1'
 
 const EMPTY_STATE: AppState = {
-  settings: DEFAULT_SETTINGS,
+  settings: { ...DEFAULT_SETTINGS, budgetHistory: [] },
   entries: [],
 }
 
@@ -15,7 +15,14 @@ export function loadState(): AppState {
     const raw = localStorage.getItem(KEY)
     if (!raw) return EMPTY_STATE
     const parsed = JSON.parse(raw) as Partial<AppState>
-    const settings: Settings = { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) }
+    const rawSettings = (parsed.settings ?? {}) as Partial<Settings>
+    const settings: Settings = {
+      ...DEFAULT_SETTINGS,
+      ...rawSettings,
+      budgetHistory: Array.isArray(rawSettings.budgetHistory)
+        ? rawSettings.budgetHistory.filter(isValidBudgetPeriod)
+        : [],
+    }
     const entries: Entry[] = Array.isArray(parsed.entries)
       ? parsed.entries.filter(isValidEntry)
       : []
@@ -28,21 +35,13 @@ export function loadState(): AppState {
 /** Persist state to localStorage. No-ops outside the browser. */
 export function saveState(state: AppState): void {
   if (typeof localStorage === 'undefined') return
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state))
-  } catch {
-    // storage full or blocked — ignore, app still works in-memory
-  }
+  localStorage.setItem(KEY, JSON.stringify(state))
 }
 
 /** Wipe all persisted data (used by the "reset" action). */
 export function clearState(): void {
   if (typeof localStorage === 'undefined') return
-  try {
-    localStorage.removeItem(KEY)
-  } catch {
-    // ignore
-  }
+  localStorage.removeItem(KEY)
 }
 
 function isValidEntry(e: unknown): e is Entry {
@@ -50,10 +49,17 @@ function isValidEntry(e: unknown): e is Entry {
   const r = e as Record<string, unknown>
   return (
     typeof r.id === 'string' &&
-    typeof r.date === 'string' &&
+    typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) &&
     typeof r.amount === 'number' &&
-    Number.isFinite(r.amount)
+    Number.isFinite(r.amount) && r.amount >= 0
   )
+}
+
+function isValidBudgetPeriod(value: unknown): value is Settings['budgetHistory'][number] {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return typeof row.effectiveDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.effectiveDate) &&
+    typeof row.dailyBudget === 'number' && Number.isFinite(row.dailyBudget) && row.dailyBudget > 0
 }
 
 /** Cryptographically-ish unique id that works everywhere. */

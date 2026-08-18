@@ -1,4 +1,4 @@
-import type { AppState, DayStat, Entry, Settings } from './types'
+import type { AppState, BudgetPeriod, DayStat, Entry, Settings } from './types'
 
 /**
  * Girl Math carryover engine.
@@ -32,33 +32,59 @@ export function todayISO(now: Date = new Date()): string {
 
 /** Add `n` days (may be negative) to an ISO date string. */
 export function addDays(iso: string, n: number): string {
-  const d = fromISODate(iso)
-  d.setDate(d.getDate() + n)
-  return toISODate(d)
+  const [year, month, day] = iso.split('-').map(Number)
+  const d = new Date(Date.UTC(year, month - 1, day + n))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 /** Inclusive whole-day difference: how many days from `a` to `b`. */
 export function daysBetween(a: string, b: string): number {
-  const ms = fromISODate(b).getTime() - fromISODate(a).getTime()
-  return Math.round(ms / 86_400_000)
+  const ordinal = (iso: string) => {
+    const [year, month, day] = iso.split('-').map(Number)
+    return Date.UTC(year, month - 1, day) / 86_400_000
+  }
+  return ordinal(b) - ordinal(a)
 }
 
 /** Inclusive list of ISO date strings from `start` to `end`. */
 export function dateRange(start: string, end: string): string[] {
-  if (daysBetween(start, end) < 0) return []
-  const out: string[] = []
-  let cur = start
-  // guard against pathological ranges
-  for (let i = 0; i <= 366 * 20 && daysBetween(cur, end) >= 0; i++) {
-    out.push(cur)
-    cur = addDays(cur, 1)
-  }
-  return out
+  const length = daysBetween(start, end)
+  if (!Number.isInteger(length) || length < 0) return []
+  // Protect rendering from corrupt imports while supporting a lifetime of data.
+  if (length > 366 * 100) throw new Error('Date range exceeds 100 years')
+  return Array.from({ length: length + 1 }, (_, index) => addDays(start, index))
 }
 
 /** Sum of all spend logged against a given ISO day. */
 export function spentOn(entries: Entry[], iso: string): number {
-  return entries.reduce((sum, e) => (e.date === iso ? sum + e.amount : sum), 0)
+  const cents = entries.reduce((sum, e) => (e.date === iso ? sum + toCents(e.amount) : sum), 0)
+  return cents / 100
+}
+
+export function normalizeBudgetHistory(settings: Settings): BudgetPeriod[] {
+  const source = settings.budgetHistory?.length
+    ? settings.budgetHistory
+    : [{ effectiveDate: settings.startDate, dailyBudget: settings.dailyBudget }]
+  const byDate = new Map<string, BudgetPeriod>()
+  for (const period of source) {
+    if (period.effectiveDate >= settings.startDate && Number.isFinite(period.dailyBudget) && period.dailyBudget > 0) {
+      byDate.set(period.effectiveDate, { ...period, dailyBudget: round2(period.dailyBudget) })
+    }
+  }
+  if (!byDate.has(settings.startDate)) {
+    byDate.set(settings.startDate, { effectiveDate: settings.startDate, dailyBudget: round2(settings.dailyBudget) })
+  }
+  return [...byDate.values()].sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate))
+}
+
+export function budgetForDate(settings: Settings, iso: string): number {
+  const history = normalizeBudgetHistory(settings)
+  let budget = history[0]?.dailyBudget ?? settings.dailyBudget
+  for (const period of history) {
+    if (period.effectiveDate > iso) break
+    budget = period.dailyBudget
+  }
+  return budget
 }
 
 /**
@@ -70,10 +96,11 @@ export function surplusThrough(state: AppState, asOf: string): number {
   const { settings, entries } = state
   const start = settings.startDate
   if (daysBetween(start, asOf) < 0) return 0
-  return dateRange(start, asOf).reduce(
-    (sum, iso) => sum + (settings.dailyBudget - spentOn(entries, iso)),
+  const cents = dateRange(start, asOf).reduce(
+    (sum, iso) => sum + toCents(budgetForDate(settings, iso)) - toCents(spentOn(entries, iso)),
     0,
   )
+  return cents / 100
 }
 
 /**
@@ -87,7 +114,7 @@ export function bankedSurplus(state: AppState, now: Date = new Date()): number {
 
 /** Total effective money you can spend today = daily budget + carried surplus. */
 export function effectiveSpendableToday(state: AppState, now: Date = new Date()): number {
-  return round2(state.settings.dailyBudget + bankedSurplus(state, now))
+  return round2(budgetForDate(state.settings, todayISO(now)) + bankedSurplus(state, now))
 }
 
 /** How much of today's effective spendable is left after what you've logged. */
@@ -106,7 +133,7 @@ export function underBudgetStreak(state: AppState, now: Date = new Date()): numb
   let streak = 0
   let cur = todayISO(now)
   while (daysBetween(settings.startDate, cur) >= 0) {
-    if (spentOn(entries, cur) <= settings.dailyBudget) {
+    if (toCents(spentOn(entries, cur)) <= toCents(budgetForDate(settings, cur))) {
       streak++
       cur = addDays(cur, -1)
     } else {
@@ -130,8 +157,8 @@ export function recentDayStats(
     return {
       date: iso,
       spent: round2(spent),
-      budget: settings.dailyBudget,
-      net: round2(settings.dailyBudget - spent),
+      budget: budgetForDate(settings, iso),
+      net: round2(budgetForDate(settings, iso) - spent),
     }
   })
 }
@@ -148,8 +175,8 @@ export function historyDayStats(state: AppState, now: Date = new Date()): DaySta
       return {
         date: iso,
         spent: round2(spent),
-        budget: settings.dailyBudget,
-        net: round2(settings.dailyBudget - spent),
+        budget: budgetForDate(settings, iso),
+        net: round2(budgetForDate(settings, iso) - spent),
       }
     })
     .reverse()
@@ -157,7 +184,11 @@ export function historyDayStats(state: AppState, now: Date = new Date()): DaySta
 
 /** Round to 2 decimal places, avoiding floating point crumbs. */
 export function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100
+  return toCents(n) / 100
+}
+
+export function toCents(n: number): number {
+  return Math.round((n + Math.sign(n) * Number.EPSILON) * 100)
 }
 
 /** Format a number as currency using the Intl API, falling back gracefully. */
@@ -178,4 +209,5 @@ export const DEFAULT_SETTINGS: Settings = {
   currency: 'USD',
   startDate: todayISO(),
   onboarded: false,
+  budgetHistory: [],
 }

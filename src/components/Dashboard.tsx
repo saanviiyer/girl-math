@@ -1,6 +1,7 @@
 import type { AppState } from '../lib/types'
 import {
   bankedSurplus,
+  budgetForDate,
   effectiveSpendableToday,
   formatMoney,
   recentDayStats,
@@ -14,18 +15,19 @@ import NetBarChart from './NetBarChart'
 
 interface Props {
   state: AppState
+  now?: Date
 }
 
-export default function Dashboard({ state }: Props) {
+export default function Dashboard({ state, now = new Date() }: Props) {
   const { currency } = state.settings
-  const surplus = bankedSurplus(state)
-  const remaining = todayRemaining(state)
-  const spendable = effectiveSpendableToday(state)
-  const today = todayISO()
+  const surplus = bankedSurplus(state, now)
+  const remaining = todayRemaining(state, now)
+  const spendable = effectiveSpendableToday(state, now)
+  const today = todayISO(now)
   const spentToday = spentOn(state.entries, today)
-  const todayNet = state.settings.dailyBudget - spentToday
-  const streak = underBudgetStreak(state)
-  const stats = recentDayStats(state, 30)
+  const todayNet = budgetForDate(state.settings, today) - spentToday
+  const streak = underBudgetStreak(state, now)
+  const stats = recentDayStats(state, 30, now)
 
   const surplusPositive = surplus >= 0
 

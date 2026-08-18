@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import type { Entry } from '../lib/types'
-import { formatMoney, fromISODate, spentOn } from '../lib/mathEngine'
+import type { Entry, Settings } from '../lib/types'
+import { budgetForDate, formatMoney, fromISODate, spentOn } from '../lib/mathEngine'
+import { CATEGORIES } from './LogSpending'
 
 interface Props {
   entries: Entry[]
-  dailyBudget: number
+  settings: Settings
   currency: string
   onUpdate: (id: string, patch: Partial<Omit<Entry, 'id'>>) => void
   onDelete: (id: string) => void
+  minDate: string
+  maxDate: string
 }
 
 function prettyDate(iso: string): string {
@@ -18,10 +21,12 @@ function prettyDate(iso: string): string {
   })
 }
 
-export default function History({ entries, dailyBudget, currency, onUpdate, onDelete }: Props) {
+export default function History({ entries, settings, currency, onUpdate, onDelete, minDate, maxDate }: Props) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState('')
   const [editNote, setEditNote] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editCategory, setEditCategory] = useState('')
 
   // group entries by date, newest day first
   const byDate = new Map<string, Entry[]>()
@@ -44,12 +49,14 @@ export default function History({ entries, dailyBudget, currency, onUpdate, onDe
     setEditing(e.id)
     setEditAmount(String(e.amount))
     setEditNote(e.note ?? '')
+    setEditDate(e.date)
+    setEditCategory(e.category ?? '')
   }
 
   function saveEdit(id: string) {
     const value = Number(editAmount)
-    if (Number.isFinite(value) && value >= 0) {
-      onUpdate(id, { amount: value, note: editNote.trim() || undefined })
+    if (Number.isFinite(value) && value > 0 && value <= 1_000_000_000 && editDate >= minDate && editDate <= maxDate) {
+      onUpdate(id, { amount: value, date: editDate, category: editCategory || undefined, note: editNote.trim() || undefined })
     }
     setEditing(null)
   }
@@ -59,6 +66,7 @@ export default function History({ entries, dailyBudget, currency, onUpdate, onDe
       {days.map((day) => {
         const dayEntries = byDate.get(day)!
         const spent = spentOn(entries, day)
+        const dailyBudget = budgetForDate(settings, day)
         const net = dailyBudget - spent
         const positive = net >= 0
         return (
@@ -83,14 +91,25 @@ export default function History({ entries, dailyBudget, currency, onUpdate, onDe
                     <div className="flex flex-col gap-2">
                       <div className="flex gap-2">
                         <input
+                          aria-label="Amount"
                           type="number"
-                          min="0"
+                          min="0.01"
+                          max="1000000000"
                           step="0.01"
                           value={editAmount}
                           onChange={(ev) => setEditAmount(ev.target.value)}
                           className="w-24 rounded-xl border border-bubble-200 px-2 py-1 text-sm font-semibold text-bubble-800 outline-none focus:border-bubble-500"
                         />
+                        <input aria-label="Date" type="date" min={minDate} max={maxDate} value={editDate} onChange={(ev) => setEditDate(ev.target.value)} className="rounded-xl border border-bubble-200 px-2 py-1 text-sm text-bubble-800" />
+                      </div>
+                      <div className="flex gap-2">
+                        <select aria-label="Category" value={editCategory} onChange={(ev) => setEditCategory(ev.target.value)} className="rounded-xl border border-bubble-200 px-2 py-1 text-sm text-bubble-800">
+                          <option value="">No category</option>
+                          {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
+                        </select>
                         <input
+                          aria-label="Note"
+                          maxLength={500}
                           type="text"
                           value={editNote}
                           placeholder="note"
@@ -126,14 +145,14 @@ export default function History({ entries, dailyBudget, currency, onUpdate, onDe
                         <button
                           onClick={() => startEdit(e)}
                           className="rounded-lg px-2 py-1 text-xs font-semibold text-bubble-600 hover:bg-bubble-100"
-                          aria-label="Edit entry"
+                          aria-label={`Edit ${formatMoney(e.amount, currency)} entry`}
                         >
                           ✏️
                         </button>
                         <button
                           onClick={() => onDelete(e.id)}
                           className="rounded-lg px-2 py-1 text-xs font-semibold text-bubble-600 hover:bg-bubble-100"
-                          aria-label="Delete entry"
+                          aria-label={`Delete ${formatMoney(e.amount, currency)} entry`}
                         >
                           🗑️
                         </button>
