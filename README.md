@@ -4,16 +4,16 @@
 
 
 A daily-budget **carryover tracker**. Set a daily budget, log what you spend, and
-every dollar you *don't* spend becomes surplus you can splurge with later —
+every dollar you *don't* spend becomes surplus you can splurge with later, 
 guilt-free. It's just math.
 
 > you didn't spend $11 today, so really you MADE $11.
 
 Runs two ways with the **same UI**:
 
-- **Local demo mode (zero config)** — no backend, no accounts, all data lives in
+- **Local demo mode (zero config)**: no backend, no accounts, all data lives in
   `localStorage`. This is the default when no Supabase env vars are set.
-- **Real multi-user mode** — add a free Supabase project and the app gains email
+- **Real multi-user mode**: add a free Supabase project and the app gains email
   magic-link accounts and cloud sync across devices. See
   [Make it real / Production setup](#make-it-real--production-setup).
 
@@ -28,10 +28,10 @@ Every active day from your start date through today contributes
 
 Key numbers on the dashboard:
 
-- **Banked surplus** — everything carried in from days *before* today.
-- **Effective spendable today** — `dailyBudget + bankedSurplus`.
-- **Today's remaining** — effective spendable minus what you've logged today.
-- **Streak** — consecutive under-or-on-budget days counting back from today.
+- **Banked surplus**: everything carried in from days *before* today.
+- **Effective spendable today**: `dailyBudget + bankedSurplus`.
+- **Today's remaining**: effective spendable minus what you've logged today.
+- **Streak**: consecutive under-or-on-budget days counting back from today.
 
 All of this lives in a single pure, unit-tested module: [`src/lib/mathEngine.ts`](src/lib/mathEngine.ts).
 
@@ -79,7 +79,7 @@ npm test           # runs the vitest unit tests for the carryover math
 
 ## Deploy
 
-The app is a fully static SPA — `npm run build` emits everything into `dist/`.
+The app is a fully static SPA, `npm run build` emits everything into `dist/`.
 Deploy configs are checked in: `vercel.json`, `netlify.toml`, and a
 `Dockerfile` (all with an SPA fallback so unknown routes serve `index.html`).
 
@@ -90,7 +90,7 @@ npm i -g vercel          # once
 vercel --prod            # from the app directory
 ```
 
-Or import the repo in the dashboard — the framework preset auto-detects as
+Or import the repo in the dashboard, the framework preset auto-detects as
 **Vite** (build `npm run build`, output `dist`).
 
 **Netlify** (`netlify.toml` included)
@@ -102,7 +102,7 @@ netlify deploy --prod    # build command + publish dir come from netlify.toml
 
 Or drag-and-drop the `dist/` folder into the Netlify dashboard.
 
-**Docker** (`Dockerfile` + `nginx.conf` included — multi-stage build, served by
+**Docker** (`Dockerfile` + `nginx.conf` included, multi-stage build, served by
 `nginx:alpine` with an SPA fallback)
 
 ```bash
@@ -122,7 +122,7 @@ Because it's a single-page app, configure your host to fall back to
 
 ## Make it real / Production setup
 
-Out of the box the app runs in **local-only demo mode** — no accounts, data in
+Out of the box the app runs in **local-only demo mode**, no accounts, data in
 `localStorage`. To turn it into a real multi-user product with accounts and cloud
 sync, point it at a free [Supabase](https://supabase.com) project. It stays fully
 optional: **without the two env vars below, the app still builds and runs in demo
@@ -138,9 +138,9 @@ tier is plenty), and wait for it to finish provisioning.
 The schema lives in [`supabase/migrations`](supabase/migrations). Apply every migration in filename order (including `0002_budget_history.sql` for existing installations).
 Apply it either way:
 
-- **SQL editor** — open the project's *SQL Editor*, paste the contents of the
+- **SQL editor**: open the project's *SQL Editor*, paste the contents of the
   migration file, and run it.
-- **Supabase CLI** — link the project and push:
+- **Supabase CLI**: link the project and push:
 
   ```bash
   supabase link --project-ref <your-project-ref>
@@ -155,7 +155,7 @@ touch their own rows (`auth.uid() = user_id`).
 
 In *Authentication → Providers*, make sure **Email** is enabled (magic links are
 on by default). Under *Authentication → URL Configuration*, add your app's
-URL(s) — `http://localhost:5173` for local dev and your production domain — to
+URL(s), `http://localhost:5173` for local dev and your production domain, to
 the redirect allow-list.
 
 **4. Set the env vars**
@@ -180,16 +180,16 @@ and `VITE_SUPABASE_ANON_KEY` (Production + Preview), then redeploy. Add the Verc
 domain to the Supabase redirect allow-list from step 3.
 
 > Leave the env vars unset anywhere (local or Vercel) and that deployment simply
-> runs in local-only demo mode — no code changes needed.
+> runs in local-only demo mode, no code changes needed.
 
 ### How it's wired
 
-- `src/lib/supabase.ts` — creates the client only when both env vars exist.
-- `src/lib/auth.tsx` — `AuthProvider` + `useAuth()` (magic-link sign-in/out).
-- `src/lib/repository.ts` — a `Repository` interface with two implementations,
+- `src/lib/supabase.ts`: creates the client only when both env vars exist.
+- `src/lib/auth.tsx`: `AuthProvider` + `useAuth()` (magic-link sign-in/out).
+- `src/lib/repository.ts`: a `Repository` interface with two implementations,
   `LocalRepository` (localStorage) and `SupabaseRepository` (Postgres), selected
   at runtime by `getRepository`.
-- The pure `src/lib/mathEngine.ts` and its tests are untouched — persistence is
+- The pure `src/lib/mathEngine.ts` and its tests are untouched, persistence is
   swapped underneath the same math.
 
 ## Data & privacy
